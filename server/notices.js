@@ -21,7 +21,7 @@ export function noticeFor({ sub, decision, planName, now }) {
 }
 
 export function allowedAmounts(subs, inputs) {
-  const set = new Set([inputs.monthlyCents, inputs.annualCents, ...subs.map((s) => s.priceCents)])
+  const set = new Set([inputs.monthlyCents, inputs.annualCents, ...subs.map((s) => s.priceCents)].filter((c) => c != null))
   return new Set([...set].map((c) => fmt(c)))
 }
 

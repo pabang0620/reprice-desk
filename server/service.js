@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { cohortReport, COHORT_RULES } from './domain/cohort.js'
 import { fmt, toCents } from './domain/money.js'
 import { compareStrategies } from './domain/strategy.js'
-import { buildCard, buildStudioData, cohortLabel, DEFAULT_RECOMMENDATION, metricRows, recommendationReason, strategyInput } from './view.js'
+import { buildCard, buildStudioData, cohortLabel, DEFAULT_RECOMMENDATION, metricRows, pricesMissing, recommendationReason, strategyInput } from './view.js'
 import { executePlan, runDueJobs } from './executor.js'
 import { fingerprint, loadSnapshot } from './snapshot.js'
 import { MockPaypal } from './paypal/mockPaypal.js'
@@ -88,13 +88,14 @@ export function createDesk({ port, clock = () => new Date(), settings = {}, refi
       rule: session.rule,
       ruleDraft: session.ruleDraft,
       inputs: session.inputs,
+      pricesMissing: pricesMissing(session),
       strategy: session.strategy,
       recommended: DEFAULT_RECOMMENDATION,
       recommendedReason: compare ? recommendationReason(compare, DEFAULT_RECOMMENDATION) : null,
       findings: { v9: cfg.v9, v4: cfg.v4, cap: cfg.cap },
       compare: compare ? { rows: metricRows(compare), A: summarize(compare.A), B: summarize(compare.B) } : null,
       cards: compare ? { A: buildCard(compare.A, session), B: buildCard(compare.B, session) } : null,
-      approval: session.approval ? publicApproval(session.approval) : null,
+      approval: session.approval ? publicApproval(session) : null,
       execution: session.execution,
       jobs: session.jobs,
       webhooks,
@@ -103,7 +104,11 @@ export function createDesk({ port, clock = () => new Date(), settings = {}, refi
   }
 
   const summarize = (r) => ({ strategy: r.strategy, metrics: r.metrics, mrr: r.mrr, raiseCount: r.raiseCount, keepCount: r.keepCount, outsideSubs: r.outsideSubs, expectedWebhooks: r.expectedWebhooks, notes: r.notes, schedule: r.steps.filter((s) => s.phase === 'scheduled') })
-  const publicApproval = (a) => ({ planId: a.planId, strategy: a.strategy, status: a.status, createdAt: a.createdAt })
+  const publicApproval = (session) => {
+    const approval = session.approval
+    const plan = session.plans.get(approval.planId)
+    return { ...approval, card: plan ? buildCard(plan, session) : null }
+  }
 
   function setRule(sessionId, ruleId) {
     const session = need(sessionId)
@@ -147,6 +152,7 @@ export function createDesk({ port, clock = () => new Date(), settings = {}, refi
   async function prepareApproval(sessionId, strategy) {
     const session = need(sessionId)
     if (!session.rule) throw new HttpError(409, 'Pick who to keep first.')
+    if (pricesMissing(session)) throw new HttpError(409, 'Type the new monthly and annual price in the approval card first.')
     const snapshot = await snapshotOf(session)
     const compare = compareOf(session, snapshot)
     const result = compare[strategy]
@@ -171,6 +177,7 @@ export function createDesk({ port, clock = () => new Date(), settings = {}, refi
       if (session.executedPlanIds.has(planId) || session.execution) throw new HttpError(409, 'This plan already ran. A used bundle is read-only.')
       if (session.approval?.planId !== planId || session.approval.status !== 'ready') throw new HttpError(409, 'This is not the current approval card. Prepare the approval again.')
       const snapshot = await snapshotOf(session)
+      if (plan.waitUntil) throw new HttpError(409, `Strategy A must wait until ${plan.waitUntil.date}: ${plan.waitUntil.labels.join(', ')} cannot be pinned inside 10 days of a charge. Nothing was written.`)
       if (fingerprint(snapshot.subs) !== plan.fingerprint) {
         throw new HttpError(409, 'Review again: the subscribers changed after the plan was prepared. Nothing was written.')
       }

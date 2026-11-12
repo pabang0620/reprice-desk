@@ -28,7 +28,7 @@ export default function PriceLadder(params) {
   const monthsOf = (m) => rows.filter((r) => r.member === m)
   return (
     <div className="rd-widget">
-      <div className="rd-card-title">Price ladder, strategy {strategy} <span className="rd-foot">monthly equivalent per member, derived</span></div>
+      <div className="rd-w-head rd-card-title"><h3>Price ladder, strategy {strategy}</h3><span className="rd-w-sub">monthly equivalent per member, derived</span></div>
       <svg viewBox={`0 0 ${W} ${H}`} className="rd-svg" role="img" aria-label="Price per member over 13 months">
         {[0, 0.5, 1].map((t) => <line key={t} x1={PAD.l} x2={W - PAD.r} y1={y(max * t / 1.1)} y2={y(max * t / 1.1)} className="rd-grid" />)}
         {[0, 0.5, 1].map((t) => <text key={`t${t}`} x={4} y={y(max * t / 1.1) + 4} className="rd-axis rd-mono">${(max * t / 1.1).toFixed(0)}</text>)}

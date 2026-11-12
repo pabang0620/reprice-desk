@@ -1,8 +1,11 @@
 const KEPT_ACTIONS = ['keep', 'keep_override', 'blocked']
 
-// The one line that proves "founders untouched": the members kept at their old price, as read back from PayPal.
-// Pure function of the read-back rows, so every figure comes from PayPal's answer.
-export function keptSummary(readBack = []) {
+// The real source of a read-back: the PayPal sandbox, or the in-memory stand-in when no PayPal keys are set.
+export const sourceName = (source) => (source === 'sandbox' ? 'the PayPal sandbox' : 'the PayPal stand-in')
+
+// The one line that proves "founders untouched": the members kept at their old price, as read back.
+// Pure function of the read-back rows, so every figure comes from the answer of the source that was called.
+export function keptSummary(readBack = [], source = 'mock') {
   const kept = readBack.filter((r) => KEPT_ACTIONS.includes(r.action))
   if (!kept.length) return null
   const prices = [...new Set(kept.map((r) => `$${(r.priceCents / 100).toFixed(2)}`))]
@@ -10,7 +13,7 @@ export function keptSummary(readBack = []) {
   const allOk = kept.every((r) => r.ok && r.priceCents === r.expectedCents)
   return {
     ok: allOk,
-    text: `Kept members unchanged: ${kept.map((r) => r.label).join(' ')} at ${prices.join(' / ')}, plan_overridden=${flags.join(' / ')} (read back from PayPal)`,
+    text: `Kept members unchanged: ${kept.map((r) => r.label).join(' ')} at ${prices.join(' / ')}, plan_overridden=${flags.join(' / ')} (read back from ${sourceName(source)})`,
   }
 }
 

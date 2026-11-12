@@ -28,6 +28,8 @@ export function seedSubs(now = NOW) {
 
 export const WINDOW = { minDays: 7, maxDays: 30 }
 export const PRICES = { MONTH: 1200, YEAR: 12000 }
+// What the operator types in the approval card (no price is prefilled).
+export const PRICED = { monthly: 12, annual: 120 }
 
 // Records every call so tests can check the order of PayPal writes and reads.
 export function recordingPort(inner) {

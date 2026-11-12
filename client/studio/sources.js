@@ -4,7 +4,7 @@ const money = (id, name) => ({ id, name, format: 'currencyFormat', formatOptions
 const int = (id, name) => ({ id, name, format: 'integerFormat' })
 
 export const SOURCE_FIELDS = {
-  subscribers: [text('member', 'Member'), text('plan', 'Plan'), text('cycle', 'Cycle'), text('tag', 'Tag'), text('signup_month', 'Signup month'), text('source', 'Source'), money('price', 'Price'), text('overridden', 'Overridden'), text('next_charge', 'Next charge'), int('days_to_charge', 'Days to charge'), money('derived_next_charge', 'Derived next charge'), text('ten_day_applied', 'Ten-day rule applied'), text('cohort', 'Cohort')],
+  subscribers: [text('member', 'Member'), text('plan', 'Plan'), text('cycle', 'Cycle'), text('tag', 'Tag'), text('signup_month', 'Signup month'), text('source', 'Source'), money('price', 'Price'), text('overridden', 'Override'), text('next_charge', 'Next charge'), int('days_to_charge', 'Days to charge'), money('derived_next_charge', 'Derived next charge'), text('ten_day_applied', 'Ten-day rule applied'), text('cohort', 'Cohort')],
   plans: [text('plan', 'Plan'), text('plan_id', 'Plan ID'), int('version', 'Version'), money('price', 'Price'), text('changed_at', 'Changed at')],
   strategy_outcomes: [text('strategy', 'Strategy'), text('metric', 'Metric'), { id: 'value', name: 'Value', format: 'decimalFormat' }],
   price_timeline: [text('member', 'Member'), text('strategy', 'Strategy'), text('month', 'Month'), text('cohort', 'Cohort'), money('price', 'Price')],

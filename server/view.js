@@ -6,9 +6,12 @@ import { compareStrategies } from './domain/strategy.js'
 
 export const DEFAULT_RECOMMENDATION = 'B'
 
+// True until the operator typed both new prices. Nothing is compared or approved before that.
+export const pricesMissing = (session) => session.inputs.monthlyCents == null || session.inputs.annualCents == null
+
 export function strategyInput({ session, snapshot, now, settings }) {
   const intent = session.rule ? intentFromRule(session.rule, snapshot.subs) : null
-  if (!intent) return null
+  if (!intent || pricesMissing(session)) return null
   return {
     subs: snapshot.subs,
     intent,
@@ -54,7 +57,31 @@ export function buildCard(result, session) {
       `PayPal will email: ${strategy === 'A' ? `${planEmail}; ${patchEmail}` : patchEmail}`,
     ],
     notes: result.notes,
+    waitUntil: result.waitUntil ? result.waitUntil.date : null,
     mrr: { before: fmt(result.mrr.beforeCents), after: fmt(result.mrr.afterCents), delta: fmtDelta(result.mrr.deltaCents) },
+    paypal: paypalCalls(result),
+  }
+}
+
+// "What PayPal will do": the plan's own steps grouped by PayPal call. Presentation only, nothing new is decided here.
+export function paypalCalls(result) {
+  const byKind = (kind) => result.steps.filter((s) => s.kind === kind)
+  const cycle = (interval) => (interval === 'YEAR' ? 'Annual' : 'Monthly')
+  const who = (list, key) => list.map((s) => `${s.label} ${fmt(s[key])}`).join(', ')
+  const rows = [
+    ...byKind('create_plan').map((s) => ({ call: 'Create plan', what: `Pro ${cycle(s.interval)} ${fmt(s.priceCents)} (new signups)`, when: 'now', count: 1 })),
+    ...(byKind('override').length ? [{ call: 'PATCH subscription', what: `${who(byKind('override'), 'priceCents')} keep-override`, when: 'now', count: byKind('override').length }] : []),
+    ...byKind('plan_price').map((s) => ({ call: 'Update plan pricing', what: `${cycle(s.interval)} plan to ${fmt(s.priceCents)}`, when: 'now', count: 1 })),
+    ...(byKind('raise_now').length ? [{ call: 'PATCH subscription', what: `${who(byKind('raise_now'), 'targetCents')} override`, when: 'now', count: byKind('raise_now').length }] : []),
+    ...(byKind('scheduled_raise').length ? [{ call: 'PATCH subscription', what: who(byKind('scheduled_raise'), 'targetCents'), when: 'scheduled', count: byKind('scheduled_raise').length }] : []),
+    { call: 'Read back', what: 'every member price, from PayPal', when: 'after run', count: null },
+  ]
+  const hooks = result.expectedWebhooks.now
+  return {
+    rows,
+    now: result.metrics.writes.now,
+    scheduled: result.metrics.writes.scheduled,
+    webhooks: `BILLING.PLAN.PRICING-CHANGE.ACTIVATED x${hooks.pricingChange}, BILLING.SUBSCRIPTION.UPDATED x${hooks.subscriptionUpdated}`,
   }
 }
 

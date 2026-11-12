@@ -3,8 +3,9 @@ import { COHORT_RULES, cohortReport } from './domain/cohort.js'
 import { fmt, toCents } from './domain/money.js'
 import { iso } from './domain/dates.js'
 import { allowedAmounts, checkDraft, noticeFor } from './notices.js'
-import { metricRows, DEFAULT_RECOMMENDATION } from './view.js'
+import { metricRows, pricesMissing, DEFAULT_RECOMMENDATION } from './view.js'
 import { HttpError, parse } from './http.js'
+import { sourceName } from './executor.js'
 
 const ruleId = z.enum(['tag', 'signup', 'source'])
 const schemas = {
@@ -17,6 +18,24 @@ const schemas = {
 }
 
 export const TOOL_NAMES = Object.keys(schemas)
+
+const PRICES_MISSING = 'The operator has not typed the new prices yet. Ask them to type the new monthly and annual price in the approval card (New monthly, New annual). You cannot set a price.'
+
+// Plain sentences, not field names: the model quotes tool results, and the operator reads the chat.
+function openChecks(settings) {
+  const say = (value, unknown, no, yes) => (value == null ? unknown : value ? yes : no)
+  return [
+    say(settings.v9, 'Not checked in the sandbox yet: whether PayPal emails the kept (overridden) members when the plan price changes. This only matters for strategy A; strategy B never changes the old plan and never writes to kept members.', 'Sandbox check: PayPal sent no plan-change email to kept (overridden) members.', 'Sandbox check: PayPal does email kept (overridden) members about a plan price change.'),
+    say(settings.v4, 'Not checked in the sandbox yet: whether PayPal emails a member whose own price is raised one by one. This concerns raised members only, never kept members.', 'Sandbox check: a one-by-one price raise sends no PayPal email.', 'Sandbox check: a one-by-one price raise sends a PayPal email.'),
+  ]
+}
+
+// The rule state in words, so a model that saved a draft earlier reads that the operator has confirmed it since.
+function confirmedRuleText(session, snapshot) {
+  if (!session.rule) return 'Not confirmed yet.'
+  const kept = cohortReport(snapshot.subs).byRule[session.rule]
+  return `Confirmed by the operator in the desk (no longer a draft): ${COHORT_RULES[session.rule].label}, ${kept.length} members kept at their price (${kept.join(', ')}).`
+}
 
 // Tools the Studio agent calls. None of them writes to PayPal and none accepts a price: the operator's card inputs are the only source.
 export function createAgentTools(desk) {
@@ -37,11 +56,15 @@ export function createAgentTools(desk) {
 
   handlers.propose_cohort_rules = async (session, args) => {
     session.ruleDraft = { rules: args.rules, selected: args.selected || null, savedAt: desk.clock().toISOString() }
-    return { saved: true, note: 'Draft only. The operator confirms the rule in the desk before any number is computed.', draft: session.ruleDraft }
+    const note = session.rule
+      ? `Draft saved. The rule the operator confirmed in the desk is still ${COHORT_RULES[session.rule].label} until they confirm another one there.`
+      : 'Draft only. The operator confirms the rule in the desk before any number is computed.'
+    return { saved: true, note, draft: session.ruleDraft }
   }
 
   handlers.compare_strategies = async (session, args) => {
     if (!session.rule) return { error: 'The operator has not confirmed a cohort rule yet. Ask them, call propose_cohort_rules, and wait for them to confirm in the desk.' }
+    if (pricesMissing(session)) return { error: PRICES_MISSING }
     const snapshot = await desk.snapshotOf(session)
     const compare = desk.compareOf(session, snapshot)
     const warnings = []
@@ -53,20 +76,21 @@ export function createAgentTools(desk) {
     }
     const rows = metricRows(compare)
     return {
-      pricesUsed: { monthly: fmt(session.inputs.monthlyCents), annual: fmt(session.inputs.annualCents), noticeWindowDays: [session.inputs.minDays, session.inputs.maxDays] },
+      founderRule: confirmedRuleText(session, snapshot),
+      pricesUsed: { typedBy: 'the operator, in the approval card (already set)', monthly: fmt(session.inputs.monthlyCents), annual: fmt(session.inputs.annualCents), noticeWindowDays: [session.inputs.minDays, session.inputs.maxDays] },
       warnings,
       rows: rows.map((r) => ({ metric: r.label, A: r.A, B: r.B })),
       defaultRecommendation: args.preference === 'no_checkout_change' ? 'A' : DEFAULT_RECOMMENDATION,
       outsideWindowA: compare.A.outsideSubs,
       notes: [...compare.A.notes, ...compare.B.notes],
-      findings: { v9PlanEmailToKept: desk.settings.v9, v4PatchEmail: desk.settings.v4 },
+      openChecks: openChecks(desk.settings),
     }
   }
 
   handlers.get_schedule_preview = async (session, args) => {
     const snapshot = await desk.snapshotOf(session)
     const compare = desk.compareOf(session, snapshot)
-    if (!compare) return { error: 'No cohort rule confirmed yet.' }
+    if (!compare) return { error: session.rule ? PRICES_MISSING : 'No cohort rule confirmed yet.' }
     const strategy = args.strategy || session.strategy || DEFAULT_RECOMMENDATION
     return {
       strategy,
@@ -87,7 +111,7 @@ export function createAgentTools(desk) {
   handlers.get_execution_report = async (session) => {
     if (!session.execution) return { executed: false }
     const e = session.execution
-    return { executed: true, strategy: e.strategy, ok: e.ok, error: e.error, steps: e.steps.map((s) => `${s.kind} ${s.label}: ${s.status}`), readBack: e.readBack.map((r) => ({ member: r.label, price: fmt(r.priceCents), overridden: r.overridden, ok: r.ok })), newPlans: e.newPlans, scheduled: e.jobs.map((j) => ({ member: j.label, runOn: j.runOn })) }
+    return { executed: true, readBackFrom: sourceName(e.source), strategy: e.strategy, ok: e.ok, error: e.error, steps: e.steps.map((s) => `${s.kind} ${s.label}: ${s.status}`), readBack: e.readBack.map((r) => ({ member: r.label, price: fmt(r.priceCents), overridden: r.overridden, ok: r.ok })), newPlans: e.newPlans, scheduled: e.jobs.map((j) => ({ member: j.label, runOn: j.runOn })) }
   }
 
   return {

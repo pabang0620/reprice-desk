@@ -10,7 +10,10 @@
     "dev:client": "vite",
     "build": "vite build",
     "start": "node server/index.js",
-    "test": "FORCE_MOCK=1 BUNDLES_FILE= node --test test/*.test.js"
+    "test": "FORCE_MOCK=1 BUNDLES_FILE= node --test test/*.test.js",
+    "demo:video": "npm run build && FORCE_MOCK=1 BUNDLES_FILE= node server/index.js",
+    "demo:video:sandbox": "npm run build && LLM_BACKEND=account node server/index.js",
+    "walk": "node scripts/walk.js"
   },
   "engines": {
     "node": ">=20"

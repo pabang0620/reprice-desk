@@ -9,6 +9,8 @@ export const config = {
   // LLM_BACKEND=account runs the model through the local Claude Code login (development only). The API key is never used then.
   llmBackend: forceMock ? 'mock' : process.env.LLM_BACKEND === 'account' ? 'account' : process.env.ANTHROPIC_API_KEY ? 'api' : 'mock',
   anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
+  // Development only: append every real model turn to this transcript file (see builtin/recorded-runs).
+  llmRecordFile: forceMock ? '' : process.env.LLM_RECORD_FILE || '',
   paypalClientId: forceMock ? '' : process.env.PAYPAL_CLIENT_ID || '',
   paypalClientSecret: forceMock ? '' : process.env.PAYPAL_CLIENT_SECRET || '',
   paypalWebhookId: process.env.PAYPAL_WEBHOOK_ID || '',

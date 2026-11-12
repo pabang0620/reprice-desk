@@ -38,17 +38,30 @@ function better(row, side) {
 export default function StrategyCompare() {
   const { view, busy } = useDesk()
   if (!view) return <div className="rd-widget">Open a bundle first.</div>
-  if (!view.compare) return <div className="rd-widget"><RulePicker view={view} busy={busy} /></div>
+  if (!view.compare && !view.rule) return <div className="rd-widget"><div className="rd-w-head"><h3>Who to keep</h3><span className="rd-w-sub">confirm a rule, nothing is computed before</span></div><RulePicker view={view} busy={busy} /></div>
+  if (!view.compare) {
+    return (
+      <div className="rd-widget rd-compare">
+        <div className="rd-w-head"><h3>Strategy compare</h3><span className="rd-w-sub">eight code-computed metrics</span></div>
+        <div className="rd-compare-head">
+          <span>Rule: <strong>{RULE_LABELS[view.rule]}</strong></span>
+          <button className="rd-link" onClick={() => actions.setRule(view.rule === 'tag' ? 'signup' : 'tag')}>change</button>
+        </div>
+        <p className="rd-lead" data-testid="prices-needed">Type the new monthly and annual price in the approval card. The two strategies are computed from your prices only.</p>
+      </div>
+    )
+  }
   const chosen = view.strategy
   return (
     <div className="rd-widget rd-compare">
+      <div className="rd-w-head"><h3>Strategy compare</h3><span className="rd-w-sub">eight code-computed metrics</span></div>
       <div className="rd-compare-head">
         <span>Rule: <strong>{RULE_LABELS[view.rule]}</strong></span>
         {!view.execution && <button className="rd-link" onClick={() => actions.setRule(view.rule === 'tag' ? 'signup' : 'tag')}>change</button>}
       </div>
       <table className="rd-table">
         <thead>
-          <tr><th /><th>A: raise the plan + keep-overrides</th><th>B: new plan + raise chosen members</th></tr>
+          <tr><th /><th className={chosen === 'A' ? 'rd-col-on' : ''}>A: raise the plan + keep-overrides</th><th className={chosen === 'B' ? 'rd-col-on' : ''}>B: new plan + raise chosen members</th></tr>
         </thead>
         <tbody>
           {view.compare.rows.map((row) => (

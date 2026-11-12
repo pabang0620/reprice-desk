@@ -10,6 +10,9 @@ export class ExecutionError extends Error {
   }
 }
 
+// Where a read-back really came from. The stand-in is never called PayPal on screen.
+export const sourceName = (mode) => (mode === 'sandbox' ? 'the PayPal sandbox' : 'the PayPal stand-in')
+
 function logStep(result, entry) {
   result.steps.push({ at: new Date().toISOString(), ...entry })
 }
@@ -45,7 +48,7 @@ async function runA({ port, plan, subsById, snapshot, now, result }) {
       throw new ExecutionError(`Override for ${step.label} did not read back. Plan price was NOT changed.`, result)
     }
   }
-  logStep(result, { kind: 'verify', label: `${overrides.length} overrides`, status: 'done', detail: 'all keep-overrides read back from PayPal' })
+  logStep(result, { kind: 'verify', label: `${overrides.length} overrides`, status: 'done', detail: `all keep-overrides read back from ${sourceName(port.mode)}` })
   for (const step of plan.steps.filter((s) => s.kind === 'plan_price')) {
     try {
       const previousCents = snapshot.plans.find((p) => p.id === step.planId)?.priceCents ?? null
@@ -105,7 +108,7 @@ export function assertStepsInBundle(plan, snapshot) {
 }
 
 export async function executePlan({ port, plan, bundle, now }) {
-  const result = { ok: false, steps: [], readBack: [], newPlans: [], jobs: [], error: null }
+  const result = { ok: false, source: port.mode === 'sandbox' ? 'sandbox' : 'mock', steps: [], readBack: [], newPlans: [], jobs: [], error: null }
   const before = await loadSnapshot({ port, bundle, now })
   const subsById = new Map(before.subs.map((s) => [s.id, s]))
   try {

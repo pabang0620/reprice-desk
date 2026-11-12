@@ -27,6 +27,10 @@ test('http: full path from session to approved run on the stand-in', async () =>
     const { body: opened } = await call('POST', '/session')
     const id = opened.data.sessionId
     assert.equal((await call('PUT', `/session/${id}/rule`, { rule: 'tag' })).status, 200)
+    const early = await call('POST', `/session/${id}/approval`, { strategy: 'B' })
+    assert.equal(early.status, 409, 'no approval before the operator typed both prices')
+    assert.match(early.body.message || early.body.error || '', /Type the new monthly and annual price/)
+    assert.equal((await call('PUT', `/session/${id}/inputs`, { monthly: 12, annual: 120 })).status, 200)
     const prep = await call('POST', `/session/${id}/approval`, { strategy: 'B' })
     assert.equal(prep.status, 201)
     const run = await call('POST', `/session/${id}/run`, { planId: prep.body.data.planId })
@@ -62,6 +66,7 @@ test('http: a plan from one session cannot be approved from another', async () =
     const a = (await call('POST', '/session')).body.data.sessionId
     const b = (await call('POST', '/session')).body.data.sessionId
     await call('PUT', `/session/${a}/rule`, { rule: 'tag' })
+    await call('PUT', `/session/${a}/inputs`, { monthly: 12, annual: 120 })
     const prep = await call('POST', `/session/${a}/approval`, { strategy: 'B' })
     const attack = await call('POST', `/session/${b}/run`, { planId: prep.body.data.planId })
     assert.equal(attack.status, 404)

@@ -2,6 +2,7 @@ import { createAiHarness, directLlmRunner } from 'ag-studio'
 import { api } from '../api.js'
 import { actions, deskStore } from '../deskStore.js'
 import { claudeProxyAdapter } from './claudeAdapter.js'
+import { deskStateText } from './deskState.js'
 
 const INSTRUCTIONS = `You are the Reprice Agent inside the Reprice Desk dashboard. You help a small business that bills members through PayPal Subscriptions raise prices for exactly the members the operator chooses.
 
@@ -10,9 +11,14 @@ Rules you must follow:
 - Every number you state must come from a tool result. Never invent counts, dates, prices, or percentages.
 - Start with scan_subscribers. "Founders" can be read three ways (tag, signup month, launch campaign). State how many subscribers the readings disagree on, with their labels, and ask which reading to use. Save the operator's answer with propose_cohort_rules. It is only a draft: the operator confirms it in the desk.
 - After the operator confirms, call compare_strategies and explain the recommendation using only its rows. Strategy A raises the plan and protects kept members with overrides first. Strategy B creates a new plan for new signups and raises only chosen members one by one. If the operator cannot change their checkout button, A is the answer.
+- If compare_strategies says the prices are missing, ask the operator to type the new monthly and annual price in the approval card. Do not repeat a price from the chat as if it were set.
 - If a result says an email count is pending, say it is not verified yet.
+- Write for the operator in plain words. Never quote tool field names, ids of checks or JSON keys.
 - For notice wording use draft_notice with no dollar amounts that the tools did not return.
-- To build or change dashboard widgets (for example "show kept members by signup month"), delegate to the built-in data and widget agents.
+- To build a new dashboard widget (for example "show kept members by signup month"): delegate to the data agent for the numbers, then to the page agent to ADD a new widget (a new id such as keptByMonth, placed full width BELOW the lowest existing widget on the page (the grid grows downward, so there is always room), never over another widget), then to the widget agent to configure that new widget. Never reconfigure the desk's own widgets (strategyCompare, approval, ladder, notice, members, events, nextSteps).
+- When you delegate to the widget agent, pass the exact field ids and the exact values the data agent reported (for example: filter the cohort field to equal "Kept"), so it never has to guess a value. Then report what the delegated agents' results say they did. The widget agent cannot see rendered values, so check its result instead: if it used the same fields, count and filter value that the data agent queried, say the chart is built on that same query and give the data agent's counts; ask the operator to look at the chart only if the two differ.
+- To change a widget you added, delegate to the widget agent for that widget. If a setting does not exist, say so.
+- The "Current desk state" paragraph below is the truth about the rule, the prices and the run. It overrides earlier chat turns and earlier tool results.
 Keep answers short and concrete.`
 
 const object = (properties = {}, required = []) => ({ type: 'object', properties, required, additionalProperties: false })
@@ -55,13 +61,14 @@ export const PROMPT_STARTERS = [
 
 // The label says which model really answers: the stand-in, the hosted API, or the developer's local Claude account.
 function modelLabel() {
-  const llm = deskStore.get().config?.modes.llm
-  if (llm === 'account') return 'Claude Sonnet (local account)'
-  if (llm === 'live') return 'Claude Sonnet (server API key)'
+  const { modes, recordedRun } = deskStore.get().config || {}
+  if (modes?.llm === 'account') return 'Claude Sonnet (local account)'
+  if (modes?.llm === 'live') return 'Claude Sonnet (server API key)'
+  if (recordedRun) return `${recordedRun.label} (replay)`
   return 'Claude stand-in (scripted, no model)'
 }
 
-// Studio harness: our Claude agent is primary, and the built-in data and widget agents stay available to it.
+// Studio harness: our Claude agent is primary, and the built-in data, page and widget agents stay available to it.
 export function createRepriceHarness(api_) {
   return createAiHarness(api_, ({ tools, builtIn }) => {
     const adapter = claudeProxyAdapter
@@ -70,8 +77,8 @@ export function createRepriceHarness(api_) {
       name: 'Reprice Agent',
       description: 'Finds who the founders are, compares the two ways to raise prices, and explains the pick.',
       adapter,
-      instructions: () => INSTRUCTIONS,
-      tools: (ctx) => [...TOOL_DEFS.map(makeTool), ctx.tools.delegateTo(['data', 'widget'])],
+      instructions: () => `${INSTRUCTIONS}\n\n${deskStateText(deskStore.get().view)}`,
+      tools: (ctx) => [...TOOL_DEFS.map(makeTool), ctx.tools.delegateTo(['data', 'page', 'widget'])],
     })
     const wrap = (id) => directLlmRunner({ ...builtIn[id], adapter })
     return {

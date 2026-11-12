@@ -1,7 +1,7 @@
 import { api } from '../api.js'
-import { deskStore } from '../deskStore.js'
+import { actions, deskStore } from '../deskStore.js'
 
-// AG Studio ships no Claude adapter (the official example is OpenAI only), so this one talks to our own server.
+// Our Claude adapter for the AG Studio harness. It talks to our own server.
 // The server holds the Anthropic key and answers one model turn per call; the Studio harness runs the tool loop.
 function* eventsFor(response) {
   for (const item of response.output) {
@@ -23,7 +23,10 @@ export const claudeProxyAdapter = {
   executeTurn(request, options = {}) {
     const complete = api
       .post('/api/studio/llm', { sessionId: deskStore.get().sessionId, request: JSON.parse(JSON.stringify(request)) })
-      .then((data) => data.response)
+      .then((data) => {
+        actions.setAnswerSource({ source: data.source, label: data.label })
+        return data.response
+      })
     complete.catch(() => {})
     return {
       stream: {

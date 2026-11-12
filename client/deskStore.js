@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { api } from './api.js'
 
 // One small external store. Studio widgets render inside AG Studio's own tree, so they read this store directly.
-let state = { config: null, sessionId: null, view: null, busy: false, error: '', card: null, pendingStrategy: null, lastRunAt: 0 }
+let state = { config: null, sessionId: null, view: null, busy: false, error: '', card: null, pendingStrategy: null, lastRunAt: 0, answerSource: null }
 const listeners = new Set()
 const SESSION_KEY = 'reprice-desk.session'
 
@@ -32,21 +32,28 @@ async function guarded(fn) {
   }
 }
 
+// A failed read must not replace a visitor's pricing session or its finite bundle.
+async function resume(sessionId) {
+  const view = await api.get(`/api/session/${sessionId}`)
+  const card = view.approval?.status === 'ready' ? view.approval : null
+  set({ sessionId, view, card, pendingStrategy: card?.strategy ?? null })
+}
+
 export const actions = {
   async loadConfig() {
-    set({ config: await api.get('/api/config') })
+    return guarded(async () => {
+      set({ config: await api.get('/api/config') })
+      const saved = sessionStorage.getItem(SESSION_KEY)
+      if (saved) await resume(saved)
+    })
   },
   // A page reload resumes the same bundle instead of leasing a new one. Pass fresh to lease another.
   async open({ fresh = false } = {}) {
     return guarded(async () => {
       const saved = fresh ? null : sessionStorage.getItem(SESSION_KEY)
       if (saved) {
-        try {
-          set({ sessionId: saved, card: null, view: await api.get(`/api/session/${saved}`) })
-          return
-        } catch {
-          sessionStorage.removeItem(SESSION_KEY)
-        }
+        await resume(saved)
+        return
       }
       const { sessionId } = await api.post('/api/session')
       sessionStorage.setItem(SESSION_KEY, sessionId)
@@ -86,4 +93,6 @@ export const actions = {
     })
   },
   clearError: () => set({ error: '' }),
+  // Where the last chat answer came from (recorded real run, stand-in, or a live model). Shown in the header.
+  setAnswerSource: (answerSource) => set({ answerSource }),
 }

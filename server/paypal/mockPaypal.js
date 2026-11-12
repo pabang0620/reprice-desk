@@ -1,4 +1,4 @@
-import { addDays, addMonths } from '../domain/dates.js'
+import { addDays, addMonths, daysBetween, rollForward } from '../domain/dates.js'
 import { seedBundle } from '../seed.js'
 import { PaypalError } from './errors.js'
 
@@ -6,6 +6,8 @@ import { PaypalError } from './errors.js'
 // - a plan price change reaches every subscription that has no override (D1, D2)
 // - an override stays after later plan price changes and cannot be removed (D2)
 // - an optional increase cap (V1 c) can be switched on to test the fallback
+// - an override PATCH on a PayPal-funded subscription charged within 10 days is accepted but not applied:
+//   plan_overridden stays false (sandbox, VERIFY V18: F1 at 6 days and R1 at 4 days, R2 at 12 days applied)
 export class MockPaypal {
   constructor({ clock = () => new Date(), cap = null, failOverrideFor = [], rejectPlanUpdate = false } = {}) {
     this.mode = 'mock'
@@ -104,8 +106,10 @@ export class MockPaypal {
     if (this.failOverrideFor.has(subId)) throw new PaypalError('PERMISSION_DENIED', 'Billing Plan Override is not allowed due to insufficient permissions.', 403)
     const current = this.view(sub).priceCents
     this.checkCap(current, priceCents, subId)
-    sub.overridePriceCents = priceCents
     this.record('patchSubscription', { id: subId, priceCents })
+    const days = daysBetween(this.clock(), rollForward(sub.nextBillingTime, sub.interval, this.clock()))
+    if (sub.fundedBy === 'PAYPAL' && days <= 10) return
+    sub.overridePriceCents = priceCents
     this.emit('BILLING.SUBSCRIPTION.UPDATED', subId)
   }
 

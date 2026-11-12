@@ -5,7 +5,9 @@ import * as store from './store.js'
 import { HttpError, parse, sessionIdSchema } from './http.js'
 import { buildNoticeRows, createAgentTools, TOOL_NAMES } from './agentTools.js'
 import { toCsv } from './notices.js'
-import { runLlmTurn } from './studio/llm.js'
+import { recordedRuns, runLlmTurn } from './studio/llm.js'
+import { recordedLabel } from './studio/recording.js'
+import { SANDBOX_EVIDENCE } from './evidence.js'
 import { MockPaypal } from './paypal/mockPaypal.js'
 import { LivePaypal } from './paypal/livePaypal.js'
 import { createDesk } from './service.js'
@@ -28,6 +30,12 @@ const runBody = z.object({ planId: z.string().uuid() }).strict()
 const toolParams = z.object({ id: sessionIdSchema, tool: z.enum(TOOL_NAMES) })
 const llmBody = z.object({ sessionId: sessionIdSchema, request: z.object({ input: z.array(z.any()), instructions: z.string().optional(), tools: z.array(z.any()).optional(), toolChoice: z.any().optional(), responseFormat: z.any(), model: z.any().optional() }).passthrough() })
 
+// In stand-in mode the chat replays a recorded real run where one matches; the screen names it.
+function recordedInfo() {
+  const run = modes.llm === 'mock' ? recordedRuns()[0] : null
+  return run ? { label: recordedLabel(run), recordedOn: run.recordedOn, turns: recordedRuns().reduce((n, r) => n + r.turns.length, 0) } : null
+}
+
 // Live PayPal sandbox when credentials exist, otherwise the in-memory stand-in with the same rules.
 export function createPort() {
   if (modes.paypal === 'sandbox') return new LivePaypal({ clientId: config.paypalClientId, clientSecret: config.paypalClientSecret, webhookId: config.paypalWebhookId })
@@ -37,6 +45,14 @@ export function createPort() {
 export function createApp(deps = {}) {
   const port = deps.port || createPort()
   const isMock = port.mode === 'mock'
+  // The stand-in has no seeding cost. It seeds a new batch only when no fresh bundle is left (also before the first
+  // session, so the start screen never says 0 on a fresh server). It does not top up after every lease, so the
+  // "Fresh bundles left" count on screen goes down by one per opened bundle, like the real store does.
+  const refillMock = isMock ? async () => {
+    if (store.freshBundlesLeft() > 0) return
+    // addBundles drops the oldest used bundles above BUNDLE_STORE_MAX, so memory stays bounded.
+    for (let i = 0; i < config.mockBundleCount; i += 1) store.addBundles([await port.seedBundle()])
+  } : null
   const desk = createDesk({
     port,
     settings: {
@@ -44,10 +60,7 @@ export function createApp(deps = {}) {
       v4: config.v4PatchSendsEmail,
       cap: config.capPct ? { pct: config.capPct, days: config.capDays, mode: 'clamp' } : null,
     },
-    // The stand-in has no seeding cost, so it always keeps fresh bundles ready.
-    refillMock: isMock ? async () => {
-      while (store.freshBundlesLeft() < config.mockBundleCount && store.totalBundles() < config.bundleStoreMax) store.addBundles([await port.seedBundle()])
-    } : null,
+    refillMock,
   })
   const tools = createAgentTools(desk)
   const llmLimiter = deps.llmLimiter || createLlmLimiter()
@@ -62,10 +75,13 @@ export function createApp(deps = {}) {
 
   router.get('/health', (req, res) => res.json({ success: true, data: { modes, bundles: store.bundleCounts() } }))
 
-  router.get('/config', (req, res) => res.json({
-    success: true,
-    data: { modes: { ...modes, paypal: port.mode }, studioLicenseKey: config.studioLicenseKey, freshBundlesLeft: store.freshBundlesLeft(), findings: desk.settings, defaultRecommendation: DEFAULT_RECOMMENDATION },
+  router.get('/config', guard(async (req, res) => {
+    if (refillMock) await refillMock()
+    res.json({ success: true, data: configData() })
   }))
+
+  const configData = () => ({ modes: { ...modes, paypal: port.mode }, studioLicenseKey: config.studioLicenseKey, freshBundlesLeft: store.freshBundlesLeft(), findings: desk.settings, defaultRecommendation: DEFAULT_RECOMMENDATION, recordedRun: recordedInfo(), sandboxEvidence: SANDBOX_EVIDENCE,
+  })
 
   router.post('/session', guard(async (req, res) => {
     const session = await desk.startSession()
@@ -113,7 +129,7 @@ export function createApp(deps = {}) {
     const session = desk.need(id)
     const snapshot = await desk.snapshotOf(session)
     const compare = desk.compareOf(session, snapshot)
-    if (!compare) throw new HttpError(409, 'Pick who to keep first.')
+    if (!compare) throw new HttpError(409, session.rule ? 'Type the new monthly and annual price in the approval card first.' : 'Pick who to keep first.')
     res.type('text/csv').send(toCsv(buildNoticeRows({ snapshot, compare, session, now: desk.clock() })))
   }))
 
@@ -126,7 +142,8 @@ export function createApp(deps = {}) {
     const { request, sessionId } = parse(llmBody, req.body)
     desk.need(sessionId)
     llmLimiter.take(sessionId)
-    res.json({ success: true, data: { response: await runLlmTurn(request) } })
+    const { response, source, label } = await runLlmTurn(request)
+    res.json({ success: true, data: { response, source, label } })
   }))
 
   router.post('/webhooks/paypal', guard(async (req, res) => {

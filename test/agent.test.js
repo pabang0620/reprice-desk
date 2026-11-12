@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createAgentTools } from '../server/agentTools.js'
 import { toAnthropicRequest, fromAnthropicResponse } from '../server/studio/convert.js'
 import { mockLlmTurn } from '../server/studio/mockLlm.js'
-import { makeDesk } from './helpers.js'
+import { makeDesk, PRICED } from './helpers.js'
 
 const userItem = (text) => ({ id: 'u', kind: 'input', type: 'message', role: 'user', status: 'completed', content: [{ type: 'text', text }] })
 
@@ -16,6 +16,7 @@ async function setup() {
 test('model-drafted price is ignored', async () => {
   const { desk, session, tools } = await setup()
   desk.setRule(session.id, 'tag')
+  desk.setInputs(session.id, PRICED)
   const result = await tools.run(session.id, 'compare_strategies', { plan_draft: { monthly: 15, annual: 150 } })
   assert.equal(result.pricesUsed.monthly, '$12.00')
   assert.equal(result.pricesUsed.annual, '$120.00')
@@ -46,7 +47,10 @@ test('agent tool input is validated (extra keys and bad rule are rejected)', asy
 })
 
 test('notice draft with amounts the code did not compute is ignored', async () => {
-  const { session, tools } = await setup()
+  const { desk, session, tools } = await setup()
+  const early = await tools.run(session.id, 'draft_notice', { cohort: 'raise', body: 'Your price moves from $9.00 to $12.00 soon.' })
+  assert.equal(early.saved, false, '$12.00 is not a computed amount before the operator typed it')
+  desk.setInputs(session.id, PRICED)
   const bad = await tools.run(session.id, 'draft_notice', { cohort: 'raise', body: 'Your price goes to $19.99 next month.' })
   assert.equal(bad.saved, false)
   const good = await tools.run(session.id, 'draft_notice', { cohort: 'raise', body: 'Your price moves from $9.00 to $12.00 soon.' })
@@ -57,6 +61,7 @@ test('agent sessions are separate: a tool call cannot read another session', asy
   const { desk, session, tools } = await setup()
   const other = await desk.startSession()
   desk.setRule(session.id, 'tag')
+  desk.setInputs(session.id, PRICED)
   const mine = await tools.run(session.id, 'compare_strategies', {})
   const theirs = await tools.run(other.id, 'compare_strategies', {})
   assert.ok(mine.rows)

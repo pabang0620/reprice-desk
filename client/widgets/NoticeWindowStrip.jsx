@@ -22,7 +22,7 @@ export default function NoticeWindowStrip(params) {
   const h = Math.max(rows.length, 1) * ROW + 26
   return (
     <div className="rd-widget">
-      <div className="rd-card-title">Notice windows <span className="rd-foot">days from today to each next charge</span></div>
+      <div className="rd-w-head rd-card-title"><h3>Notice windows</h3><span className="rd-w-sub">days from today to each next charge</span></div>
       <svg viewBox={`0 0 ${W} ${h}`} className="rd-svg" role="img" aria-label="Days until each member's next charge">
         <rect x={x(0)} y={0} width={x(10) - x(0)} height={h - 18} className="rd-zone-ten" />
         <rect x={x(minDays)} y={0} width={x(Math.min(maxDays, SCALE_DAYS)) - x(minDays)} height={h - 18} className="rd-zone-window" />

@@ -155,7 +155,8 @@ export function createSession({ bundleId = null } = {}) {
     createdAt: new Date().toISOString(),
     rule: null,
     ruleDraft: null,
-    inputs: { monthlyCents: 1200, annualCents: 12000, minDays: 7, maxDays: 30 },
+    // No price is prefilled: the operator types both new prices in the approval card before anything is computed.
+    inputs: { monthlyCents: null, annualCents: null, minDays: 7, maxDays: 30 },
     strategy: null,
     plans: new Map(),
     executedPlanIds: new Set(),

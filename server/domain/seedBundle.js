@@ -9,7 +9,9 @@ export const PLAN_SPECS = {
 
 // custom_id = tag|signup_month|source. offsetDays counts from the day the bundle was seeded.
 export const SUBSCRIPTION_TEMPLATE = [
-  { label: 'F1', plan: 'monthly', customId: 'founder|2024-11|launch', offsetDays: 6 },
+  // F1 is charged 16 days out, so a kept founder can be pinned on seed day: PayPal does not apply an override
+  // inside 10 days (VERIFY V18), and strategy A waits until every kept member is past that point.
+  { label: 'F1', plan: 'monthly', customId: 'founder|2024-11|launch', offsetDays: 16 },
   { label: 'F2', plan: 'monthly', customId: 'founder|2024-12|launch', offsetDays: 14 },
   { label: 'F3', plan: 'monthly', customId: 'founder|2025-01|launch', offsetDays: 22 },
   { label: 'F4', plan: 'monthly', customId: 'founder|2025-01|referral', offsetDays: 29 },

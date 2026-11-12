@@ -21,7 +21,7 @@ export function validateWindow(window) {
   }
 }
 
-// PayPal may cap increases (the old docs say 20 percent per 180 days). V1(c) decides whether and how.
+// An increase cap is configurable (INCREASE_CAP_PCT). No cap is assumed: the sandbox accepted a 33 percent raise (V1 b).
 // A cap makes a two-step raise unavailable inside the cap period, so the choice is clamp now or block.
 export function resolveTarget(sub, targetCents, cap) {
   if (!cap) return { targetCents, status: 'ok' }
@@ -97,6 +97,7 @@ export function planStrategy({ strategy, subs, intent, prices, window, now, v9 =
 
   let planChanges = 0
   let overrides = 0
+  let waitUntil = null
   if (strategy === 'A') {
     const overrideSteps = []
     const planSteps = []
@@ -132,6 +133,14 @@ export function planStrategy({ strategy, subs, intent, prices, window, now, v9 =
     }
     planChanges = planSteps.length
     overrides = overrideSteps.length
+    // PayPal accepts an override PATCH inside the ten-day zone but does not apply it (sandbox, VERIFY V18). Pinning a
+    // kept member is the precondition for the plan change, so A waits until those members were charged once.
+    const late = overrideSteps.map((st) => subs.find((s) => s.id === st.subId)).filter((s) => tenDayRuleApplies({ kind: 'patch', fundedBy: s.fundedBy, daysUntilCharge: s.daysToCharge }))
+    if (late.length) {
+      const day = Math.max(...late.map((s) => s.daysToCharge)) + 1
+      waitUntil = { day, date: iso(addDays(now, day)), labels: late.map((s) => s.label) }
+      notes.push(`Strategy A must wait: ${late.map((s) => s.label).join(', ')} ${late.length === 1 ? 'is' : 'are'} charged within 10 days, and PayPal accepted but did not apply an override inside 10 days in the sandbox. Approve A on or after ${waitUntil.date}, or choose B.`)
+    }
     steps.unshift(...overrideSteps, ...planSteps)
   } else {
     const plans = intervals.map((interval) => ({ phase: 'now', kind: 'create_plan', interval, priceCents: Math.max(...raise.filter((r) => r.sub.interval === interval).map((r) => r.targetCents)) }))
@@ -187,6 +196,7 @@ export function planStrategy({ strategy, subs, intent, prices, window, now, v9 =
     expectedWebhooks,
     mrr: { beforeCents: Math.round(base), afterCents: Math.round(base + delta), deltaCents: Math.round(delta) },
     planChanges,
+    waitUntil,
     notes,
   }
 }

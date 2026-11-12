@@ -6,12 +6,13 @@ import { isKept } from '../server/view.js'
 import { accountEnv, buildPrompt, toolDefinitions, toTurnResponse, runAccountTurn } from '../server/studio/accountLlm.js'
 import { keptSummary, chipTone } from '../client/widgets/keptSummary.js'
 import { clockTime } from '../client/studio/clockTime.js'
-import { makeDesk, NOW } from './helpers.js'
+import { makeDesk, NOW, PRICED } from './helpers.js'
 
 async function runStrategy(strategy, { inputs } = {}) {
   const { desk } = await makeDesk({ bundles: 1 })
   const session = await desk.startSession()
   desk.setRule(session.id, 'tag')
+  desk.setInputs(session.id, PRICED)
   if (inputs) desk.setInputs(session.id, inputs)
   const { planId } = await desk.prepareApproval(session.id, strategy)
   await desk.approveAndRun(session.id, planId)
@@ -31,6 +32,7 @@ test('before a run the Members cohort follows the strategy chosen on the approva
   const { desk } = await makeDesk({ bundles: 1 })
   const session = await desk.startSession()
   desk.setRule(session.id, 'tag')
+  desk.setInputs(session.id, PRICED)
   await desk.prepareApproval(session.id, 'A')
   const view = await desk.view(session.id)
   assert.equal(cohortOf(view).F1, 'Kept')
@@ -62,17 +64,22 @@ test('light theme: the styles define a separate variable set for .rd-light', asy
   assert.match(studio, /rd-light/)
 })
 
-test('override-outside choice pins the current price now and schedules the raise inside the window', async () => {
-  const off = await runStrategy('A')
-  const on = await runStrategy('A', { inputs: { overrideOutside: true } })
-  const offR1 = off.session.plans.get(off.session.execution.planId).perSub
-  assert.equal(on.view.compare.A.outsideSubs.length, 0)
-  assert.ok(off.view.compare.A.outsideSubs.length >= 0)
-  const plan = on.session.plans.get(on.session.execution.planId)
-  const r1 = on.view.subs.find((s) => s.label === 'R1')
+test('override-outside choice plans a pin for R1, and A waits because R1 is charged within 10 days (V18)', async () => {
+  const { desk, mock } = await makeDesk({ bundles: 1 })
+  const s = await desk.startSession()
+  desk.setRule(s.id, 'tag')
+  desk.setInputs(s.id, { ...PRICED, overrideOutside: true })
+  const prepared = await desk.prepareApproval(s.id, 'A')
+  const plan = s.plans.get(prepared.planId)
+  const r1 = (await desk.view(s.id)).subs.find((x) => x.label === 'R1')
   assert.equal(plan.perSub[r1.id].action, 'protect_then_raise')
-  assert.ok(plan.steps.some((s) => s.kind === 'override' && s.subId === r1.id))
-  assert.equal(typeof offR1, 'object')
+  assert.ok(plan.steps.some((x) => x.kind === 'override' && x.subId === r1.id))
+  assert.equal(plan.outsideSubs.length, 0)
+  assert.deepEqual(plan.waitUntil, { day: 5, date: '2026-11-17', labels: ['R1'] })
+  assert.equal(prepared.card.waitUntil, '2026-11-17')
+  const writesBefore = mock.calls.filter((c) => c.call !== 'createSubscription' && c.call !== 'createBillingPlan').length
+  await assert.rejects(() => desk.approveAndRun(s.id, prepared.planId), /must wait until 2026-11-17: R1/)
+  assert.equal(mock.calls.filter((c) => c.call !== 'createSubscription' && c.call !== 'createBillingPlan').length, writesBefore, 'nothing written')
 })
 
 test('kept summary line comes from the read-back rows', () => {

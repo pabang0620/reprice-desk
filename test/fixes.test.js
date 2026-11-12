@@ -12,13 +12,14 @@ import { createApp } from '../server/routes.js'
 import { createLlmLimiter } from '../server/studio/limits.js'
 import { mockLlmTurn } from '../server/studio/mockLlm.js'
 import { errorHandler } from '../server/http.js'
-import { NOW, makeDesk } from './helpers.js'
+import { NOW, makeDesk, PRICED } from './helpers.js'
 
 const minutes = (n) => new Date(NOW.getTime() + n * 60000)
 
 async function prepared(desk, strategy = 'B') {
   const session = await desk.startSession()
   desk.setRule(session.id, 'tag')
+  desk.setInputs(session.id, PRICED)
   const { planId } = await desk.prepareApproval(session.id, strategy)
   return { session, planId }
 }
@@ -34,6 +35,7 @@ test('expired lease handed to another session: the first session can no longer e
   await assert.rejects(() => desk.approveAndRun(first.session.id, first.planId), /lease on this bundle ended/)
   assert.equal(mock.calls.filter((c) => c.call === 'patchSubscription').length, 0, 'nothing was written')
   desk.setRule(second.id, 'tag')
+  desk.setInputs(second.id, PRICED)
   const next = await desk.prepareApproval(second.id, 'B')
   assert.equal((await desk.approveAndRun(second.id, next.planId)).ok, true)
 })

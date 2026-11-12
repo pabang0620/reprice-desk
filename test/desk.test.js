@@ -2,11 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as store from '../server/store.js'
 import { addDays } from '../server/domain/dates.js'
-import { NOW, makeDesk } from './helpers.js'
+import { NOW, makeDesk, PRICED } from './helpers.js'
 
 async function ready(desk, strategy) {
   const session = await desk.startSession()
   desk.setRule(session.id, 'tag')
+  desk.setInputs(session.id, PRICED)
   const { planId } = await desk.prepareApproval(session.id, strategy)
   return { session, planId }
 }
@@ -28,6 +29,7 @@ test('failed override aborts plan update', async () => {
   const { desk, mock } = await makeDesk({ mockOptions: { failOverrideFor: [] } })
   const session = await desk.startSession()
   desk.setRule(session.id, 'tag')
+  desk.setInputs(session.id, PRICED)
   const { planId } = await desk.prepareApproval(session.id, 'A')
   const bundle = store.getBundle(session.bundleId)
   mock.failOverrideFor.add(bundle.subscriptions.find((s) => s.label === 'F3').subId)
@@ -108,6 +110,7 @@ test('exhausted bundles still reach compare but approve is blocked', async () =>
   const session = await desk.startSession()
   assert.equal(session.readOnly, true)
   desk.setRule(session.id, 'tag')
+  desk.setInputs(session.id, PRICED)
   const { planId } = await desk.prepareApproval(session.id, 'B')
   await assert.rejects(() => desk.approveAndRun(session.id, planId), /No fresh sandbox bundle left/)
   const view = await desk.view(session.id)
@@ -122,14 +125,18 @@ test('bundles older than the max age are not leased', async () => {
 })
 
 test('scheduled raise runs only inside chosen notice window', async () => {
-  const { desk, mock } = await makeDesk()
+  // The stand-in reads the same clock as the scheduler: an override inside 10 days of a charge is not applied (V18).
+  let now = NOW
+  const { desk, mock } = await makeDesk({ clock: () => now })
   const { session, planId } = await ready(desk, 'B')
   await desk.approveAndRun(session.id, planId)
   assert.deepEqual(await desk.runScheduler(session.id, NOW), [])
-  const out = await desk.runScheduler(session.id, addDays(NOW, 5))
+  now = addDays(NOW, 5)
+  const out = await desk.runScheduler(session.id, now)
   assert.deepEqual(out.map((o) => `${o.label}:${o.status}`), ['R1:done'])
   // A1 starts 45 days out: on day 40 only 5 days remain, which is below the 7 day minimum.
-  const late = await desk.runScheduler(session.id, addDays(NOW, 40))
+  now = addDays(NOW, 40)
+  const late = await desk.runScheduler(session.id, now)
   assert.ok(late.some((o) => o.label === 'A1' && o.status === 'missed'))
   assert.equal(mock.calls.filter((c) => c.call === 'patchSubscription').length, 4)
 })
@@ -146,13 +153,15 @@ test('scheduled raise is idempotent per subscription and day', async () => {
 })
 
 test('scheduler skips subscription already at target price', async () => {
-  const { desk, mock } = await makeDesk()
+  let now = NOW
+  const { desk, mock } = await makeDesk({ clock: () => now })
   const { session, planId } = await ready(desk, 'B')
   await desk.approveAndRun(session.id, planId)
   const bundle = store.getBundle(session.bundleId)
+  now = addDays(NOW, 5)
   await mock.overrideSubscriptionPrice(bundle.subscriptions.find((s) => s.label === 'R1').subId, 1200)
   const before = mock.calls.length
-  const out = await desk.runScheduler(session.id, addDays(NOW, 5))
+  const out = await desk.runScheduler(session.id, now)
   assert.deepEqual(out.map((o) => o.status), ['skipped'])
   assert.equal(mock.calls.length, before)
 })

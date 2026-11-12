@@ -47,19 +47,19 @@ export function executionState() {
         nextSteps: widget('nextSteps'),
         ladder: ladder(),
         events: widget('grid', { dataMapping: { cols: ['at', 'kind', 'detail'].map(ref('events')) }, format: { title: { text: 'Run log and webhooks', enabled: true } } }),
-        members: memberGrid('member', 'cycle', 'price', 'overridden', 'derived_next_charge', 'cohort'),
+        members: memberGrid('member', 'price', 'overridden', 'derived_next_charge', 'cohort'),
       },
       widgetLayout: {
-        nextSteps: layout(0, 0, 10, 28),
-        ladder: layout(10, 0, 14, 28),
-        events: layout(0, 28, 12, 18),
-        members: layout(12, 28, 12, 18),
+        nextSteps: layout(0, 0, 11, 26),
+        ladder: layout(11, 0, 13, 26),
+        events: layout(0, 26, 12, 22),
+        members: layout(12, 26, 12, 22),
       },
     }],
   }
 }
 
-const KEY = 'reprice-desk.views.v2'
+const KEY = 'reprice-desk.views.v3'
 
 export function loadSavedView(name) {
   try {
