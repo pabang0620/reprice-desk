@@ -141,9 +141,8 @@ export function createApp(deps = {}) {
   router.post('/studio/llm', guard(async (req, res) => {
     const { request, sessionId } = parse(llmBody, req.body)
     desk.need(sessionId)
-    llmLimiter.take(sessionId)
-    const { response, source, label } = await runLlmTurn(request)
-    res.json({ success: true, data: { response, source, label } })
+    const { response, source, label, fallback = null } = await runLlmTurn(request, { guard: llmLimiter, ip: req.ip, sessionId, backend: deps.llmBackend, live: deps.liveTurn })
+    res.json({ success: true, data: { response, source, label, fallback } })
   }))
 
   router.post('/webhooks/paypal', guard(async (req, res) => {

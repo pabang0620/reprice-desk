@@ -20,6 +20,27 @@ function pushMessage(messages, role, blocks) {
   else messages.push({ role, content: [...blocks] })
 }
 
+// Which tool the turn must call: a name, 'any', or null. Never expressed as tool_choice.
+export function requiredTool(request) {
+  if (request.responseFormat?.type === 'json') return 'respond'
+  const choice = request.toolChoice
+  if (!(request.tools || []).length) return null
+  if (choice === 'required') return 'any'
+  if (choice && typeof choice === 'object' && choice.name) return choice.name
+  return null
+}
+
+export function requirementText(need) {
+  return need === 'any' ? 'You must call one of the tools in this turn.' : `You must answer by calling the tool ${need}.`
+}
+
+// True when the model message satisfies the requirement (always true when nothing is required).
+export function satisfiesRequirement(message, need) {
+  if (!need) return true
+  const uses = (message.content || []).filter((b) => b.type === 'tool_use')
+  return need === 'any' ? uses.length > 0 : uses.some((b) => b.name === need)
+}
+
 export function toAnthropicRequest(request, { model, maxTokens = 4096 } = {}) {
   const system = []
   if (request.instructions) system.push(request.instructions)
@@ -47,17 +68,16 @@ export function toAnthropicRequest(request, { model, maxTokens = 4096 } = {}) {
     description: t.description || t.name,
     input_schema: t.parameters && t.parameters.type === 'object' ? t.parameters : { type: 'object', properties: {} },
   }))
+  const need = requiredTool(request)
+  const instruction = need ? requirementText(need) : request.toolChoice === 'none' ? 'Do not call any tool in this turn. Answer in plain text.' : ''
+  if (instruction) system.push(instruction)
   const body = { model, max_tokens: maxTokens, system: system.join('\n\n'), messages }
+  // This model rejects forced tool choice (HTTP 400), so tool_choice is never sent. The instruction above plus a
+  // check after the response (see satisfiesRequirement) replace it.
   if (request.responseFormat?.type === 'json') {
-    // Structured output through a forced tool call.
     body.tools = [...tools, { name: 'respond', description: request.responseFormat.description || 'Return the final structured answer.', input_schema: request.responseFormat.schema }]
-    body.tool_choice = { type: 'tool', name: 'respond' }
   } else if (tools.length) {
     body.tools = tools
-    const choice = request.toolChoice
-    if (choice === 'required') body.tool_choice = { type: 'any' }
-    else if (choice === 'none') body.tool_choice = { type: 'none' }
-    else if (choice && typeof choice === 'object') body.tool_choice = { type: 'tool', name: choice.name }
   }
   return body
 }

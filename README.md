@@ -114,7 +114,13 @@ For strategy B the webhooks expected for the immediate step are `BILLING.PLAN.PR
 | `BUNDLE_MAX_AGE_DAYS` | 2 | Older bundles are never leased, so the screen matches the README example |
 | `MOCK_BUNDLE_COUNT` | 16 | Stand-in bundle pool size |
 | `BUNDLE_STORE_MAX` / `MAX_SESSIONS` | 200 / 500 | Memory caps for bundles and sessions |
-| `LLM_CALLS_PER_SESSION` / `LLM_CALLS_PER_DAY` | 150 / 2000 | Limits on the Studio model proxy (needs a live session) |
+| `LLM_LIVE_PER_IP_HOUR` | 10 | Live Claude runs per client IP per hour. A run is one user action (one chat message), not one tool turn |
+| `LLM_LIVE_PER_DAY` | 150 | Live Claude runs per host per UTC day |
+| `LLM_TIMEOUT_MS` | 45000 | A live model turn slower than this counts as an API failure |
+| `TRUST_PROXY_HOPS` | 1 | Reverse proxies in front of the server (nginx = 1), so the client IP is read from `X-Forwarded-For`. Use 0 when the server is exposed directly |
+| `LLM_CALLS_PER_SESSION` / `LLM_CALLS_PER_DAY` | 150 / 2000 | Older safety net on model turns per session and per day (needs a live session) |
+
+When a live cap is reached, or the API fails (network, 4xx/5xx, timeout, credit exhausted), the model proxy never returns an error to the chat. The action is answered from the recorded real run when one matches that turn, otherwise by the rule-based stand-in, and the pill above the chat says which: "Recorded run: ... (live limit reached)" or "Rule-based stand-in (live model unavailable)". After a failure the rest of that action stays on the fallback.
 | `V9_KEPT_RECEIVE_PLAN_EMAIL` | empty | `true`/`false` after the sandbox check (see VERIFY.md); empty shows "pending" |
 | `V4_PATCH_SENDS_EMAIL` | empty | Same, for subscription PATCH emails |
 | `INCREASE_CAP_PCT`, `INCREASE_CAP_DAYS` | empty, 180 | Increase cap found by V1 (c) |

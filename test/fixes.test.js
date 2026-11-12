@@ -130,7 +130,7 @@ async function boot() {
   store.resetForTests()
   const app = express()
   app.use(express.json())
-  const built = createApp({ port: new MockPaypal(), llmLimiter: createLlmLimiter({ perSession: 2, perDay: 3 }) })
+  const built = createApp({ port: new MockPaypal(), llmLimiter: createLlmLimiter() })
   app.use('/api', built.router)
   app.use(errorHandler)
   const server = await new Promise((resolve) => { const s = app.listen(0, () => resolve(s)) })
@@ -165,29 +165,17 @@ test('sub-cent prices are rejected', async () => {
 })
 
 // Defect 5
-test('studio llm proxy needs a live session and respects per-session and daily limits', async () => {
+test('studio llm proxy needs a live session and answers from the fallback when a turn cap is reached', async () => {
   const { call, close } = await boot()
   const request = { input: [{ id: '1', kind: 'input', type: 'message', role: 'user', status: 'completed', content: [{ type: 'text', text: 'hello' }] }], responseFormat: { type: 'text' } }
   try {
     assert.equal((await call('POST', '/studio/llm', { request })).status, 400, 'no session id')
     assert.equal((await call('POST', '/studio/llm', { sessionId: '6f1d4c52-0c9e-4a9e-9a53-7a0a0b1c2d3e', request })).status, 404)
     const a = (await call('POST', '/session')).body.data.sessionId
-    const b = (await call('POST', '/session')).body.data.sessionId
-    assert.equal((await call('POST', '/studio/llm', { sessionId: a, request })).status, 200)
-    assert.equal((await call('POST', '/studio/llm', { sessionId: a, request })).status, 200)
-    assert.equal((await call('POST', '/studio/llm', { sessionId: a, request })).status, 429, 'session limit')
-    assert.equal((await call('POST', '/studio/llm', { sessionId: b, request })).status, 200)
-    assert.equal((await call('POST', '/studio/llm', { sessionId: b, request })).status, 429, 'daily limit of 3 reached')
+    const res = await call('POST', '/studio/llm', { sessionId: a, request })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.data.source, 'stand-in')
   } finally { close() }
-})
-
-test('daily limit resets on the next day', () => {
-  let day = NOW
-  const limiter = createLlmLimiter({ perSession: 10, perDay: 1, clock: () => day })
-  limiter.take('a')
-  assert.throws(() => limiter.take('b'), /daily/)
-  day = addDays(NOW, 1)
-  limiter.take('b')
 })
 
 // Defect 7

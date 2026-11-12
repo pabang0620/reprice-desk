@@ -1,5 +1,8 @@
 import 'dotenv/config'
 
+// A bad or missing number falls back to the default, so a typo in .env never disables a cap.
+const num = (value, fallback) => (Number.isFinite(Number(value)) && String(value ?? '').trim() !== '' ? Number(value) : fallback)
+
 const forceMock = process.env.FORCE_MOCK === '1'
 const port = Number(process.env.PORT || 3002)
 
@@ -22,8 +25,15 @@ export const config = {
   maxSessions: Number(process.env.MAX_SESSIONS || 500),
   bundleStoreMax: Number(process.env.BUNDLE_STORE_MAX || 200),
   // Studio LLM proxy limits (calls per session, calls per UTC day for the whole server).
-  llmCallsPerSession: Number(process.env.LLM_CALLS_PER_SESSION || 150),
-  llmCallsPerDay: Number(process.env.LLM_CALLS_PER_DAY || 2000),
+  llmCallsPerSession: num(process.env.LLM_CALLS_PER_SESSION, 150),
+  llmCallsPerDay: num(process.env.LLM_CALLS_PER_DAY, 2000),
+  // Live Claude protection: model runs (one user action, not one tool turn) per client IP per hour and per host per UTC day.
+  // Past a cap, or when the API fails, the action is answered from the recorded run or the rule-based stand-in.
+  llmLivePerIpHour: num(process.env.LLM_LIVE_PER_IP_HOUR, 10),
+  llmLivePerDay: num(process.env.LLM_LIVE_PER_DAY, 150),
+  llmTimeoutMs: num(process.env.LLM_TIMEOUT_MS, 45000),
+  // Reverse proxy hops in front of the server (nginx = 1), so the client IP comes from X-Forwarded-For.
+  trustProxyHops: num(process.env.TRUST_PROXY_HOPS, 1),
   mockBundleCount: Number(process.env.MOCK_BUNDLE_COUNT || 16),
   // Findings from the sandbox runs (VERIFY.md). Unknown values stay null and are shown as pending.
   v9KeptReceivePlanEmail: parseTri(process.env.V9_KEPT_RECEIVE_PLAN_EMAIL),

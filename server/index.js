@@ -8,6 +8,7 @@ import { createApp } from './routes.js'
 import * as store from './store.js'
 
 const app = express()
+app.set('trust proxy', config.trustProxyHops)
 app.use(express.json({ limit: '1mb' }))
 store.loadBundles()
 const { router, desk } = createApp()
