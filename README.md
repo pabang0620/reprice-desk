@@ -2,7 +2,9 @@
 
 # Reprice Desk
 
-**Try it:** https://reprice-desk.35-216-2-121.sslip.io (hosted demo: stand-in PayPal, recorded Claude Sonnet runs; no login).
+**Demo video:** https://youtu.be/pvyM84fDIjU | **Hosted demo:** https://reprice-desk.35-216-2-121.sslip.io | **Devpost:** https://devpost.com/software/reprice-desk
+
+**Try it:** https://reprice-desk.35-216-2-121.sslip.io (hosted demo: built-in stand-in PayPal, live Claude Sonnet `claude-sonnet-5-5` with per-IP-hour and per-day caps, falling back to a labelled recorded run or rule-based stand-in if the API fails or a cap is hit; no login).
 
 Raise subscription prices on PayPal for exactly the members you choose.
 
